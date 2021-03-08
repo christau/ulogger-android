@@ -54,6 +54,10 @@
             android:title="@string/pref_livesync_title"
             android:summary="@string/pref_livesync_summary"
             android:defaultValue="@string/pref_livesync_default" />
+        <net.fabiszewski.ulogger.SSIDListPreference
+            android:key="pause_on_wifi_ssids"
+            android:title="@string/prefs_pause_on_wifi_connect"
+            />
     </PreferenceCategory>
 
     <PreferenceCategory

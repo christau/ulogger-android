@@ -150,4 +150,6 @@
     <string name="image_task_failed">Image resampling failed</string>
     <string name="background_location_rationale">Background location permission is only needed when tracking is started without user interaction: through external command or when application is automatically started on system boot.\nFor this functionality to work you must select \"%s\" option in the location permission dialog.\nProceed to application permissions?</string>
     <string name="background_location_required">Background location permission required</string>
+    <string name="prefs_pause_on_wifi_connect">Pause on Wifi connection</string>
+    <string name="is_paused" comment="substituted app_name">%s is paused</string>
 </resources>

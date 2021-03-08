@@ -14,12 +14,17 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.net.NetworkInfo;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.HandlerThread;
@@ -32,6 +37,8 @@ import androidx.annotation.RequiresApi;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.TaskStackBuilder;
 import androidx.preference.PreferenceManager;
+
+import java.util.Set;
 
 import static net.fabiszewski.ulogger.LoggerTask.E_DISABLED;
 import static net.fabiszewski.ulogger.LoggerTask.E_PERMISSION;
@@ -69,6 +76,9 @@ public class LoggerService extends Service {
     private final int NOTIFICATION_ID = 1526756640;
     private NotificationManager notificationManager;
 
+    private boolean isPaused = false;
+    private Set<String> mSsids;
+
     /**
      * Basic initializations
      * Start location updates, web synchronization
@@ -93,6 +103,56 @@ public class LoggerService extends Service {
         // keep database open during whole service runtime
         db = DbAccess.getInstance();
         db.open(this);
+
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(WifiManager.SUPPLICANT_CONNECTION_CHANGE_ACTION);
+        filter.addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION);
+        registerReceiver(new BroadcastReceiver() {
+
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if ("android.net.wifi.STATE_CHANGE".equals(intent.getAction())) {
+
+                    NetworkInfo networkInfo = intent.getParcelableExtra(WifiManager.EXTRA_NETWORK_INFO);
+                    if(networkInfo.isConnected() /*&& !isPaused*/) {
+                        if(mSsids!=null) {
+                            WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService (Context.WIFI_SERVICE);
+                            WifiInfo info = wifiManager.getConnectionInfo ();
+                            String ssid  = info.getSSID();
+                            if(mSsids.contains(ssid)) {
+                               pauseTracking(true);
+                            }
+                        }
+                    }
+                    else if(!networkInfo.isConnected()/* && isPaused*/){
+                         pauseTracking(false);
+                    }
+                    return;
+                }
+            }}, filter);
+    }
+    private void pauseTracking(boolean pause)
+    {
+        Notification notification = null;
+        if(isPaused != pause ) {
+            isPaused=pause;
+            if(isPaused) {
+                locationHelper.removeUpdates(locationListener);
+                notification = showNotification(NOTIFICATION_ID);
+            }
+            else {
+                try {
+                    locationHelper.requestLocationUpdates(locationListener, looper);
+                    notification =  showNotification(NOTIFICATION_ID);
+                } catch (LocationHelper.LoggerException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+        if(notification != null) {
+            NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            notificationManager.notify(NOTIFICATION_ID, notification);
+        }
     }
 
     /**
@@ -141,6 +201,7 @@ public class LoggerService extends Service {
         } else {
             final Notification notification = showNotification(NOTIFICATION_ID);
             startForeground(NOTIFICATION_ID, notification);
+            isPaused = false;
             if (!initializeLocationUpdates()) {
                 setRunning(false);
                 stopSelf();
@@ -222,6 +283,7 @@ public class LoggerService extends Service {
     private void setRunning(boolean isRunning) {
         LoggerService.isRunning = isRunning;
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        mSsids = prefs.getStringSet("pause_on_wifi_ssids", null);
         SharedPreferences.Editor editor = prefs.edit();
         editor.putBoolean(SettingsActivity.KEY_LOGGER_RUNNING, isRunning);
         editor.apply();
@@ -263,7 +325,7 @@ public class LoggerService extends Service {
                         .setContentTitle(getString(R.string.app_name))
                         .setPriority(NotificationCompat.PRIORITY_HIGH)
                         .setCategory(NotificationCompat.CATEGORY_SERVICE)
-                        .setContentText(String.format(getString(R.string.is_running), getString(R.string.app_name)));
+                        .setContentText(String.format(isPaused?getString(R.string.is_paused):getString(R.string.is_running), getString(R.string.app_name)));
         Intent resultIntent = new Intent(this, MainActivity.class);
 
         TaskStackBuilder stackBuilder = TaskStackBuilder.create(this);
